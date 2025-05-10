@@ -71,6 +71,21 @@ jobs:
         VERSION_KERNEL=$(grep -oP 'LINUX_KERNEL_HASH-\K[0-9]+\.[0-9]+\.[0-9]+' include/kernel-6.12)
         echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
 
+    - name: Run User DIY script (执行用户自定义脚本) # <-- 这是新增/修改的步骤
+      run: |
+        if [ -f "${{ github.workspace }}/${{ env.DIY_SCRIPT }}" ]; then
+          echo "Executing ${{ env.DIY_SCRIPT }} from ${{ github.workspace }}/${{ env.DIY_SCRIPT }} in ${{ env.OPENWRT_PATH }}"
+          cp "${{ github.workspace }}/${{ env.DIY_SCRIPT }}" "${{ env.OPENWRT_PATH }}/" # 复制脚本到OpenWrt源码目录
+          cd ${{ env.OPENWRT_PATH }}
+          chmod +x ${{ env.DIY_SCRIPT }}
+          ./${{ env.DIY_SCRIPT }} # 在OpenWrt源码目录下执行
+        else
+          echo "${{ env.DIY_SCRIPT }} not found in ${{ github.workspace }}, skipping."
+        fi
+      env:
+        DIY_SCRIPT: ${{ env.DIY_SCRIPT }}
+        OPENWRT_PATH: ${{ env.OPENWRT_PATH }} # 确保 OPENWRT_PATH 在此步骤中可用
+
     - name: Generate Variables(生成变量)
       run: |
         cp $CONFIG_FILE $OPENWRT_PATH/.config
@@ -94,18 +109,25 @@ jobs:
     - name: Install Feeds(安装feeds)
       run: |
         cd $OPENWRT_PATH
+        # 如果您的 diy-script.sh 内部已经执行了 feeds update -a 和 install -a, 
+        # 您可以考虑注释掉这里的命令以避免重复执行，或者移除 diy-script.sh 中的对应行。
+        # 目前保留这里的命令，以确保 feeds 总能被处理。
         ./scripts/feeds update -a
         ./scripts/feeds install -a
   
     - name: Load Custom Configuration(加载自定义配置)
       run: |
-        [ -e files ] && mv files $OPENWRT_PATH/files
+        # 注意：如果 diy-script.sh 修改了 OpenWrt 源码目录下的 files 目录或 .config 文件，
+        # 这里的操作顺序可能需要审视。
+        # 通常 diy-script.sh 会处理包的添加和源码修改，
+        # .config 文件由 CONFIG_FILE 环境变量指定的文件复制而来。
+        [ -e files ] && mv files $OPENWRT_PATH/files # 此处的 'files' 指的是 GitHub 仓库根目录下的 files 文件夹
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE $OPENWRT_PATH/.config
 
     - name: Download DL Package(下载DL软件包)
       run: |
         cd $OPENWRT_PATH
-        make defconfig
+        make defconfig # 确保 .config 文件被正确加载和处理
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
@@ -137,9 +159,13 @@ jobs:
         cd $OPENWRT_PATH/bin/targets/*/*
         cat sha256sums
         cp $OPENWRT_PATH/.config build.config
-        mv -f $OPENWRT_PATH/bin/packages/*/*/*.ipk packages
+        # 创建 packages 目录 (如果不存在) 并移动 .ipk 文件
+        mkdir -p packages
+        mv -f $OPENWRT_PATH/bin/packages/*/*/*.ipk packages/
         tar -zcf Packages.tar.gz packages
-        rm -rf packages feeds.buildinfo version.buildinfo
+        # 清理时注意不要误删 build.config 和 Packages.tar.gz
+        # feeds.buildinfo 和 version.buildinfo 通常可以移除
+        rm -rf packages feeds.buildinfo version.buildinfo 
         echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
 
     - name: Upload Firmware To Artifact(将固件上传到Artifact)
@@ -165,7 +191,7 @@ jobs:
           - 💻 这是 ${{ env.FIRMWARE_TAG }} 平台使用的 OpenWrt 固件
           - ⚽ 固件源码: ${{ env.REPO_URL }}
           - 💝 源码分支: ${{ env.REPO_BRANCH }}
-          - 🌐 默认地址: 192.168.1.1
+          - 🌐 默认地址: 192.168.1.1 (请注意，如果 diy-script.sh 成功执行，IP会被修改为您设置的 192.168.7.3)
           - 🔑 默认密码: password
           ### 🧊 固件版本
           - 固件内核版本：${{ env.VERSION_KERNEL }}
