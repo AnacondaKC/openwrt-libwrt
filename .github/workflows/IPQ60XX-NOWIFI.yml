@@ -1,8 +1,8 @@
 # ====================================================================================
-#  最终完美版 OpenWrt 编译流程 (v8 - 修正Feeds冲突)
-#  修正了 feeds.conf.default 的重复源问题。
+#  最终完美版 OpenWrt 编译流程 (v9 - 重新加入文件调试步骤)
+#  此版本强制包含文件列表调试步骤，用于彻底排查“文件找不到”的错误。
 # ====================================================================================
-name: Build OpenWrt for IPQ60XX-NOWIFI
+name: Build OpenWrt for IPQ60XX-NOWIFI (with Debug Step)
 
 on:
   workflow_dispatch:
@@ -60,9 +60,20 @@ jobs:
         VERSION_KERNEL=$(grep -oP 'LINUX_KERNEL_HASH-\K[0-9]+\.[0-9]+' target/linux/qualcommax/Makefile | head -n 1)
         echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
 
+    # =================================================================
+    # ★ 调试步骤：检查文件是否存在 ★
+    # =================================================================
+    - name: ★ Debug Step: Check for files before use
+      run: |
+        echo "================================================================"
+        echo "当前工作目录是: $(pwd)"
+        echo "列出所有文件和文件夹 (递归):"
+        ls -R
+        echo "================================================================"
+
     - name: 5. 加载自定义内容并生成最终.config (Load Custom Feeds, Scripts & Config)
       run: |
-        # 【关键修正】使用你的 feeds 文件直接覆盖默认的 feeds 配置文件
+        # 使用你的 feeds 文件直接覆盖默认的 feeds 配置文件
         if [ -f "$CUSTOM_FEEDS_CONF" ]; then
           cp $CUSTOM_FEEDS_CONF ${{ env.OPENWRT_PATH }}/feeds.conf.default
           echo "已使用自定义 Feeds 覆盖默认配置。"
