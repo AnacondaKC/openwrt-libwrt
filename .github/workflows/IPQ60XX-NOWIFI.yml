@@ -1,16 +1,14 @@
 # ====================================================================================
-#  最终完美版 OpenWrt 编译流程 (v4 - 包含文件调试步骤)
-#  此版本加入了文件列表调试步骤，用于彻底排查“文件找不到”的错误。
+#  最终完美版 OpenWrt 编译流程 (v7 - 修正特殊字符和语法)
+#  清除了所有不可见的“不换行空格”，确保YAML语法正确。
 # ====================================================================================
 name: IPQ60XX-NOWIFI
 
 on:
-  workflow_dispatch: # 允许手动触发
-  # schedule:
-  #   - cron: '0 19 * * *' # 可根据需要取消注释以启用定时编译
+  workflow_dispatch:
 
 env:
-  # 源码信息 (已根据你的反馈修正分支名)
+  # 源码信息
   REPO_URL: https://github.com/LiBwrt/openwrt-6.x.git
   REPO_BRANCH: k6.12-nss
 
@@ -61,17 +59,6 @@ jobs:
         echo "VERSION_INFO=$VERSION_INFO" >> $GITHUB_ENV
         VERSION_KERNEL=$(grep -oP 'LINUX_KERNEL_HASH-\K[0-9]+\.[0-9]+' target/linux/qualcommax/Makefile | head -n 1)
         echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
-
-    # =================================================================
-    # ★ 调试步骤：检查文件是否存在 ★
-    # =================================================================
-    - name: ★ Debug Step: Check for files before use
-      run: |
-        echo "================================================================"
-        echo "当前工作目录是: $(pwd)"
-        echo "列出所有文件和文件夹 (递归):"
-        ls -R
-        echo "================================================================"
 
     - name: 5. 加载自定义内容并生成最终.config (Load Custom Feeds, Scripts & Config)
       run: |
