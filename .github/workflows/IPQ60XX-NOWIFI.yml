@@ -1,8 +1,8 @@
 # ====================================================================================
-#  最终完美版 OpenWrt 编译流程 (v7 - 修正特殊字符和语法)
-#  清除了所有不可见的“不换行空格”，确保YAML语法正确。
+#  最终完美版 OpenWrt 编译流程 (v8 - 修正Feeds冲突)
+#  修正了 feeds.conf.default 的重复源问题。
 # ====================================================================================
-name: IPQ60XX-NOWIFI
+name: Build OpenWrt for IPQ60XX-NOWIFI
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ env:
   REPO_BRANCH: k6.12-nss
 
   # 配置文件与自定义文件路径
-  CONFIG_FILE: configs/IPQ60XX-NOWIFI.config
+  CONFIG_FILE: configs/ipq60xx-nowifi.config
   CUSTOM_FEEDS_CONF: feeds/IPQ60XX-NOWIFI-feeds.txt
   INIT_SETTINGS_SCRIPT: scripts/IPQ60XX-NOWIFI-settings.sh
 
@@ -62,10 +62,10 @@ jobs:
 
     - name: 5. 加载自定义内容并生成最终.config (Load Custom Feeds, Scripts & Config)
       run: |
-        # 将自定义源追加到 feeds 配置文件
+        # 【关键修正】使用你的 feeds 文件直接覆盖默认的 feeds 配置文件
         if [ -f "$CUSTOM_FEEDS_CONF" ]; then
-          cat $CUSTOM_FEEDS_CONF >> ${{ env.OPENWRT_PATH }}/feeds.conf.default
-          echo "自定义 Feeds 已加载。"
+          cp $CUSTOM_FEEDS_CONF ${{ env.OPENWRT_PATH }}/feeds.conf.default
+          echo "已使用自定义 Feeds 覆盖默认配置。"
         else
           echo "警告：找不到自定义 Feeds 文件: $CUSTOM_FEEDS_CONF"
         fi
