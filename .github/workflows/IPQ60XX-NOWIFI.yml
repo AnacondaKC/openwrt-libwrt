@@ -137,6 +137,7 @@ jobs:
       id: compile
       run: |
         cd ${{ env.OPENWRT_PATH }}
+        make defconfig
         echo "开始 $(nproc) 线程编译..."
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
