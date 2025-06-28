@@ -2,8 +2,7 @@
 #  最终完美版 OpenWrt 编译流程 (v4 - 包含文件调试步骤)
 #  此版本加入了文件列表调试步骤，用于彻底排查“文件找不到”的错误。
 # ====================================================================================
-name: Build OpenWrt for IPQ60XX-NOWIFI (with Debug Step)
-
+name: IPQ60XX-NOWIFI
 on:
   workflow_dispatch:
 
