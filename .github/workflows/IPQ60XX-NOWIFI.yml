@@ -11,7 +11,7 @@ env:
   # ...（这部分完全不变）
   REPO_URL: https://github.com/LiBwrt/openwrt-6.x.git
   REPO_BRANCH: k6.12-nss
-  CONFIG_FILE: configs/ipq60xx-nowifi.config
+  CONFIG_FILE: configs/IPQ60XX-NOWIFI.config
   CUSTOM_FEEDS_CONF: feeds/IPQ60XX-NOWIFI-feeds.txt
   INIT_SETTINGS_SCRIPT: scripts/IPQ60XX-NOWIFI-settings.sh
   CACHE_TOOLCHAIN: true
