@@ -12,7 +12,7 @@ on:
 env:
   # 源码信息
   REPO_URL: https://github.com/LiBwrt/openwrt-6.x.git
-  REPO_BRANCH: main
+  REPO_BRANCH: k6.12-nss
 
   # 配置文件与自定义文件路径 (已更新为你的新文件名)
   CONFIG_FILE: configs/ipq60xx-nowifi.config
