@@ -10,7 +10,7 @@
 - 固件默认管理地址：`192.168.1.1` 默认用户：`root` 默认密码：`password`
 - 源码：[LiBwrt](https://github.com/LiBwrt-op/openwrt-6.x)
 - 源码：[immortalwrt](https://github.com/immortalwrt/immortalwrt)
-- 云编译来源：https://github.com/haiibo/OpenWrt
+- 云编译来源：[breeze303](https://github.com/breeze303/openwrt-ci)
 - 兆能M2的旁路由固件  无WIFI  无USB  自带HomeProxy  除此之外无任何其他功能
 - 为了获得更好的转发性能   该固件已经全面转向6.12内核  Openwrt固件版本为24.10
 
