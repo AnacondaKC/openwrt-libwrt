@@ -1,12 +1,12 @@
 # ======================================================================================
-# GitHub Actions Workflow: 编译 OpenWrt 固件 (最终修正版 v3)
+# GitHub Actions Workflow: 编译 OpenWrt 固件 (最终修正版 v4)
 #
 # Workflow 名称:
 #   IPQ60XX-6.12-NOWIFI
 #
 # 核心修正:
-#   - 重写了自定义加载脚本，避免因'cd'改变工作目录而引起的路径解析问题。
-#   - 移除了诊断步骤，恢复代码整洁。
+#   - 调整了步骤顺序，将 Checkout 操作移动到磁盘空间扩展之后，从根源上解决路径问题。
+#   - 在最终执行步骤中加入了行内调试命令，作为最后保险。
 #
 # ======================================================================================
 
@@ -32,12 +32,8 @@ jobs:
   Build:
     runs-on: ubuntu-22.04
     steps:
-      # 步骤 1: 检出当前仓库代码
-      - name: Checkout
-        uses: actions/checkout@main
-
-      # 步骤 2: 初始化编译环境与扩展空间
-      - name: Initialize Environment & Maximize Build Space
+      # 步骤 1: 初始化编译环境与扩展空间 (先准备好环境)
+      - name: Prepare Environment & Maximize Build Space
         run: |
           sudo rm -rf /usr/share/dotnet /etc/apt/sources.list.d /usr/local/lib/android $AGENT_TOOLSDIRECTORY
           sudo -E apt-get -y purge azure-cli ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* >/dev/null 2>&1 || true
@@ -49,8 +45,12 @@ jobs:
           swap-size-mb: 1024
           root-reserve-mb: 1024
 
+      # 步骤 2: 检出当前仓库代码 (在环境稳定后再检出)
+      - name: Checkout repository code
+        uses: actions/checkout@main
+
       # 步骤 3: 克隆 OpenWrt 源码并提取版本信息
-      - name: Clone Source Code
+      - name: Clone OpenWrt Source
         run: |
           git clone --depth 1 -b $REPO_BRANCH $REPO_URL openwrt
           echo "OPENWRT_PATH=$PWD/openwrt" >> $GITHUB_ENV
@@ -59,17 +59,13 @@ jobs:
           VERSION_KERNEL=$(grep -oP 'LINUX_KERNEL_HASH-\K[0-9]+\.[0-9]+\.[0-9]+' openwrt/target/linux/generic/kernel-6.12)
           echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
 
-      # 步骤 4: [核心修正] 加载自定义配置并执行脚本 (使用显式路径)
+      # 步骤 4: 加载自定义配置并执行脚本
       - name: Load Customizations & Run DIY Script
         run: |
-          echo "Applying custom feeds configuration to openwrt/feeds.conf.default..."
-          if [ -f "$FEEDS_CONF_FILE" ]; then
-            cp "$FEEDS_CONF_FILE" "openwrt/feeds.conf.default"
-          fi
-          
-          echo "Updating and installing feeds inside 'openwrt' directory..."
-          (cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a)
-          
+          # 添加最终的行内调试命令，检查 configs 目录内容
+          echo "Final check: Listing contents of 'configs' directory before use..."
+          ls -l configs/
+
           echo "Applying custom .config to openwrt/.config..."
           if [ -f "$CONFIG_FILE" ]; then
             cp "$CONFIG_FILE" "openwrt/.config"
@@ -78,13 +74,21 @@ jobs:
             exit 1
           fi
 
+          echo "Applying custom feeds configuration to openwrt/feeds.conf.default..."
+          if [ -f "$FEEDS_CONF_FILE" ]; then
+            cp "$FEEDS_CONF_FILE" "openwrt/feeds.conf.default"
+          fi
+          
+          echo "Updating and installing feeds inside 'openwrt' directory..."
+          (cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a)
+
           echo "Copying custom files from 'files' directory..."
           if [ -d "files" ]; then
             cp -r files openwrt/
           fi
           
           echo "Running DIY script..."
-          if [ -f "$DIY_SCRIPT" ]; then
+          if [ -f "$DIY_SCRIPT" ];then
             chmod +x "$DIY_SCRIPT"
             (cd openwrt && ../$DIY_SCRIPT)
           fi
