@@ -49,6 +49,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@main
 
+      - name: Debug File Existence
+        run: |
+          echo "==================== DEBUGGING STEP ===================="
+          echo "Current Git branch is: ${{ github.ref_name }}"
+          echo "Current workspace directory is: $GITHUB_WORKSPACE"
+          echo "---"
+          echo "Listing all files in the workspace recursively..."
+          ls -R
+          echo "---"
+          echo "Explicitly checking for config file at path: $GITHUB_WORKSPACE/${{ env.CONFIG_FILE }}"
+          if [ -f "$GITHUB_WORKSPACE/${{ env.CONFIG_FILE }}" ]; then
+            echo "✅ SUCCESS: The file was found by the runner."
+          else
+            echo "❌ FAILURE: The file was NOT found by the runner."
+            echo "Please check:"
+            echo "1. If the file exists on the '${{ github.ref_name }}' branch."
+            echo "2. If the path and filename are EXACTLY 'configs/IPQ60XX-NOWIFI-6.12.config' (case-sensitive)."
+          fi
+          echo "================== END OF DEBUGGING STEP =================="
+      # =======================> 调试步骤结束 <=======================
+
       # 步骤 2: 初始化编译环境与扩展空间
       - name: Initialize Environment & Maximize Build Space
         run: |
