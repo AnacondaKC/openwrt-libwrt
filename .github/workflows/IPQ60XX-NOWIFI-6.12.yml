@@ -1,212 +1,186 @@
-# =================================================================
-# OpenWrt 固件自动化编译工作流 (专业优化版)
-# Profile: 兆能 M2 (IPQ60XX) - 纯旁路由无 WiFi
-# =================================================================
+# ======================================================================================
+# GitHub Actions Workflow: 编译 OpenWrt 固件
+#
+# Workflow 名称:
+#   IPQ60XX-6.12-NOWIFI
+# ======================================================================================
 
-name: Build OpenWrt for IPQ60XX-NOWIFI
+name: IPQ60XX-6.12-NOWIFI
 
 on:
-  # 允许手动从 Actions 页面触发
   workflow_dispatch:
-    inputs:
-      release_tag_suffix:
-        description: '为本次 Release Tag 添加后缀 (可选)'
-        required: false
-        default: ''
 
-# 工作流级别的环境变量
+# --------------------------------------------------------------------------------------
+# 全局环境变量设置
+# --------------------------------------------------------------------------------------
 env:
-  # 源码信息
+  # OpenWrt 源码仓库地址
   REPO_URL: https://github.com/LiBwrt/openwrt-6.x.git
+  # OpenWrt 源码分支
   REPO_BRANCH: k6.12-nss
-
-  # 配置文件与自定义文件路径 (相对于仓库根目录)
+  # 固件配置文件路径
   CONFIG_FILE: configs/IPQ60XX-NOWIFI-6.12.config
-  CUSTOM_FEEDS_CONF: feeds/IPQ60XX-NOWIFI-6.12-feeds.txt
-  INIT_SETTINGS_SCRIPT: scripts/IPQ60XX-NOWIFI-6.12-settings.sh
-
-  # 编译和发布选项
+  # 自定义 Feeds 源文件路径
+  FEEDS_CONF_FILE: feeds/IPQ60XX-NOWIFI-6.12-feeds.txt
+  # 自定义脚本路径
+  DIY_SCRIPT: scripts/IPQ60XX-NOWIFI-6.12-settings.sh
+  # Clash 核心架构
+  CLASH_KERNEL: amd64
+  # 是否启用工具链缓存
   CACHE_TOOLCHAIN: true
+  # 是否上传完整的 'bin' 目录
+  UPLOAD_BIN_DIR: false
+  # 是否发布固件到 GitHub Releases
   FIRMWARE_RELEASE: true
-  FIRMWARE_TAG: IPQ60XX-NOWIFI
+  # GitHub Release 和 Artifact 的标签
+  FIRMWARE_TAG: IPQ60XX-6.12-NOWIFI
+  # 设置编译环境时区
   TZ: Asia/Shanghai
 
-# 并发控制：确保同一分支下只有一个工作流在运行，新的触发会取消旧的。
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+# --------------------------------------------------------------------------------------
+# 编译任务 (Job) 定义
+# --------------------------------------------------------------------------------------
 jobs:
   Build:
-    # 使用 GitHub 提供的最新版 Ubuntu Runner
     runs-on: ubuntu-22.04
 
     steps:
-    # 步骤 1: 环境准备 - 检出当前仓库代码
-    - name: 1. Checkout Workflow Repo
-      # 锁定到主版本号，确保稳定性
-      uses: actions/checkout@v4
+      # 步骤 1: 检出当前仓库代码 (包含 workflow, config, diy-script 等)
+      - name: Checkout
+        uses: actions/checkout@main
 
-    # 步骤 2: 环境准备 - 优化 Runner 环境
-    - name: 2. Initialize Build Environment
-      env:
-        # APT 非交互模式
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        # 设置时区
-        sudo timedatectl set-timezone "$TZ"
-        # 安装编译所需的所有依赖包
-        sudo apt-get update
-        sudo apt-get -y install $(curl -fsSL [https://git.io/depends-ubuntu-2204](https://git.io/depends-ubuntu-2204))
-        sudo apt-get autoremove --purge
-        sudo apt-get clean
+      # 步骤 2: 初始化编译环境与扩展空间
+      - name: Initialize Environment & Maximize Build Space
+        run: |
+          echo "Initializing build environment and maximizing space..."
+          sudo rm -rf /usr/share/dotnet /etc/apt/sources.list.d /usr/local/lib/android $AGENT_TOOLSDIRECTORY
+          sudo -E apt-get -y purge azure-cli ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* >/dev/null 2>&1 || true
+          sudo -E apt-get -y update
+          sudo -E apt-get -y install $(curl -fsSL https://gist.githubusercontent.com/serverok/d8957ee906593952a1293a38f7149a0f/raw/34a4a15962137913ad27339035b34e2c011e5927/depends-ubuntu-2204)
+          sudo timedatectl set-timezone "$TZ"
+          # 使用 action 扩展磁盘空间
+      - uses: easimon/maximize-build-space@master
+        with:
+          swap-size-mb: 1024
+          root-reserve-mb: 1024
 
-    # 步骤 3: 环境准备 - 扩展磁盘空间
-    - name: 3. Maximize Build Space
-      uses: easimon/maximize-build-space@v7
-      with:
-        # 清理出更多空间
-        root-reserve-mb: 4096
-        swap-size-mb: 1024
-        remove-dotnet: 'true'
-        remove-android: 'true'
+      # 步骤 3: 克隆 OpenWrt 源码并提取版本信息
+      - name: Clone Source Code
+        run: |
+          echo "Cloning OpenWrt source code from $REPO_URL branch $REPO_BRANCH..."
+          git clone --depth 1 -b $REPO_BRANCH $REPO_URL openwrt
+          cd openwrt
+          echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
+          VERSION_INFO=$(git show -s --date=short --format="作者: %an<br/>时间: %cd<br/>内容: %s<br/>hash: %H")
+          echo "VERSION_INFO=$VERSION_INFO" >> $GITHUB_ENV
+          VERSION_KERNEL=$(grep -oP 'LINUX_KERNEL_HASH-\K[0-9]+\.[0-9]+\.[0-9]+' target/linux/generic/kernel-6.12)
+          echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
 
-    # 步骤 4: 源码处理 - 克隆 OpenWrt 源码并提取信息
-    - name: 4. Clone OpenWrt Source
-      run: |
-        git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
-        cd openwrt
-        # 将 openwrt 路径设为全局变量，供后续步骤使用
-        echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
-        # 提取最新 commit 信息用于 Release Note
-        VERSION_INFO=$(git show -s --date=format:"%Y-%m-%d" --format="**作者:** %an%n**时间:** %cd%n**内容:** %s%n**Hash:** %H")
-        echo "VERSION_INFO<<EOF" >> $GITHUB_ENV
-        echo "$VERSION_INFO" >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
-        # 提取目标平台的内核版本号
-        VERSION_KERNEL=$(grep -oP 'LINUX_KERNEL_HASH-\K[0-9]+\.[0-9]+' target/linux/qualcommax/Makefile | head -n 1)
-        echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
+      # 步骤 4: [流程优化] 加载自定义配置并执行脚本
+      - name: Load Customizations & Run DIY Script
+        run: |
+          cd $OPENWRT_PATH
 
-    # 步骤 5: 配置处理 - 加载自定义配置并生成最终 .config
-    - name: 5. Load Custom Content and Prepare Config
-      run: |
-        cd ${{ env.OPENWRT_PATH }}
-        
-        echo "》正在加载自定义 Feeds..."
-        if [ -f "${{ github.workspace }}/${{ env.CUSTOM_FEEDS_CONF }}" ]; then
-          cp "${{ github.workspace }}/${{ env.CUSTOM_FEEDS_CONF }}" ./feeds.conf.default
-        else
-          echo "警告：未找到自定义 Feeds 配置文件: ${{ env.CUSTOM_FEEDS_CONF }}"
-        fi
+          echo "Applying custom feeds configuration from $FEEDS_CONF_FILE..."
+          if [ -f "$GITHUB_WORKSPACE/$FEEDS_CONF_FILE" ]; then
+            cp "$GITHUB_WORKSPACE/$FEEDS_CONF_FILE" feeds.conf.default
+          else
+            echo "Custom feeds file not found, using default."
+          fi
+          
+          echo "Updating and installing feeds..."
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          
+          echo "Applying custom .config from $CONFIG_FILE..."
+          if [ -f "$GITHUB_WORKSPACE/$CONFIG_FILE" ]; then
+            cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
+          else
+            echo "ERROR: .config file not found at $CONFIG_FILE"
+            exit 1
+          fi
 
-        echo "》正在加载初始化脚本..."
-        if [ -f "${{ github.workspace }}/${{ env.INIT_SETTINGS_SCRIPT }}" ]; then
-          mkdir -p ./files/etc/uci-defaults
-          cp "${{ github.workspace }}/${{ env.INIT_SETTINGS_SCRIPT }}" ./files/etc/uci-defaults/99-init-settings
-        else
-          echo "警告：未找到初始化脚本: ${{ env.INIT_SETTINGS_SCRIPT }}"
-        fi
-        
-        echo "》正在加载核心编译配置..."
-        if [ -f "${{ github.workspace }}/${{ env.CONFIG_FILE }}" ]; then
-          cp "${{ github.workspace }}/${{ env.CONFIG_FILE }}" ./.config
-        else
-          echo "致命错误：找不到核心配置文件: ${{ env.CONFIG_FILE }}"
-          exit 1
-        fi
-        
-        echo "》正在更新与安装 Feeds..."
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
-        
-        echo "》正在生成最终 .config 文件..."
-        # 关键步骤：根据 .config 中的选择，自动计算并补全都依赖项
-        make defconfig
+          echo "Copying custom files from 'files' directory..."
+          if [ -d "$GITHUB_WORKSPACE/files" ]; then
+            mv "$GITHUB_WORKSPACE/files" "$OPENWRT_PATH/"
+          fi
+          
+          echo "Running DIY script: $DIY_SCRIPT..."
+          if [ -f "$GITHUB_WORKSPACE/$DIY_SCRIPT" ]; then
+            chmod +x "$GITHUB_WORKSPACE/$DIY_SCRIPT"
+            "$GITHUB_WORKSPACE/$DIY_SCRIPT"
+          else
+            echo "DIY script not found, skipping."
+          fi
 
-    # 步骤 6: 缓存处理 - 设置缓存
-    - name: 6. Cache Toolchain
-      if: env.CACHE_TOOLCHAIN == 'true'
-      # 锁定到具体的 Action 版本
-      uses: HiGarfield/cachewrtbuild@v3.0.1
-      with:
-        # 缓存键值，结合了源码、分支、目标平台和配置哈希，确保缓存精准
-        mixkey: ${{ env.REPO_BRANCH }}-${{ env.TZ }}-${{ secrets.CONFIG_HASH_SALT }}-${{ hashFiles(format('{0}/{1}', github.workspace, env.CONFIG_FILE)) }}
-        # 缓存目录
-        prefix: ${{ env.OPENWRT_PATH }}
+      # 步骤 5: [流程优化] 生成最终 .config 文件
+      - name: Generate Final .config
+        run: |
+          cd $OPENWRT_PATH
+          echo "Generating final .config file..."
+          make defconfig
 
-    # 步骤 7: 编译准备 - 下载源码包
-    - name: 7. Download DL Packages
-      run: |
-        cd ${{ env.OPENWRT_PATH }}
-        make download -j$(nproc)
-        # 移除可能导致问题的空文件或损坏文件
-        find dl -size -1024c -exec rm -f {} \;
+      # 步骤 6: [缓存优化] 缓存工具链 (Key 关联配置文件哈希)
+      - name: Cache Toolchain
+        if: env.CACHE_TOOLCHAIN == 'true'
+        uses: HiGarfield/cachewrtbuild@main
+        with:
+          ccache: false
+          # 新的 mixkey 包含了对配置文件的 hash 计算，确保配置改变后缓存失效
+          mixkey: ${{ env.FIRMWARE_TAG }}-${{ env.REPO_BRANCH }}-${{ hashFiles(env.CONFIG_FILE) }}-${{ hashFiles(env.FEEDS_CONF_FILE) }}
+          prefix: ${{ env.OPENWRT_PATH }}
 
-    # 步骤 8: 核心任务 - 编译固件
-    - name: 8. Compile Firmware
-      id: compile
-      run: |
-        cd ${{ env.OPENWRT_PATH }}
-        echo "开始 $(nproc) 线程编译..."
-        make -j$(nproc) || make -j1 V=s
-        # 设置状态输出，供后续步骤判断
-        echo "status=success" >> $GITHUB_OUTPUT
-        echo "BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S%z")" >> $GITHUB_ENV
-        echo "RELEASE_DATE=$(date -d "0 hour" +"%Y.%m.%d")" >> $GITHUB_ENV
+      # 步骤 7: 下载源码包 (已移除冗余的 defconfig)
+      - name: Download DL Package
+        run: |
+          cd $OPENWRT_PATH
+          echo "Downloading source packages..."
+          make download -j$(nproc)
+          # 检查并删除下载不完整的文件
+          find dl -size -1024c -exec rm -f {} \;
 
-    # 步骤 9: 后续处理 - 整理固件文件
-    - name: 9. Organize Files for Release
-      if: steps.compile.outputs.status == 'success'
-      run: |
-        # 动态获取固件目录路径
-        FIRMWARE_DIR="${{ env.OPENWRT_PATH }}/bin/targets/$(grep -oP 'CONFIG_TARGET_BOARD="\K[^"]+' .config)/$(grep -oP 'CONFIG_TARGET_SUBTARGET="\K[^"]+' .config)"
-        echo "FIRMWARE_PATH=${FIRMWARE_DIR}" >> $GITHUB_ENV
-        cd ${FIRMWARE_DIR}
-        # 备份本次编译使用的最终 .config 文件
-        cp ${{ env.OPENWRT_PATH }}/.config build.config
-        # 清理不需要上传的杂项文件，使用通配符确保清理干净
-        rm -f packages *sha256sums *buildinfo
+      # 步骤 8: 编译固件
+      - name: Compile Firmware
+        id: compile
+        run: |
+          cd $OPENWRT_PATH
+          echo "Starting firmware compilation with $(nproc) threads..."
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
+          echo "FILE_DATE=$(date +"%Y.%m.%d")" >> $GITHUB_ENV
 
-    # 步骤 10: 最终交付 - 上传固件到 Release
-    - name: 10. Upload Firmware to Release
-      if: success() && env.FIRMWARE_RELEASE == 'true'
-      # 锁定到主版本号
-      uses: ncipollo/release-action@v1.14.0
-      with:
-        # 允许更新已存在的 Release
-        allowUpdates: true
-        # 草稿模式，发布前可以最后检查
-        draft: false
-        # 正式发布
-        prerelease: false
-        # 动态生成 Release 名称
-        name: ${{ env.FIRMWARE_TAG }} - ${{ env.RELEASE_DATE }}${{ inputs.release_tag_suffix && format(' - {0}', inputs.release_tag_suffix) || '' }}
-        # 固定的 Release Tag，方便持续更新
-        tag: ${{ env.FIRMWARE_TAG }}
-        # 授权 Token
-        token: ${{ secrets.GITHUB_TOKEN }}
-        # 要上传的文件路径
-        artifacts: ${{ env.FIRMWARE_PATH }}/*
-        # Release 的详细描述，使用 Markdown 格式
-        body: |
-          ## OpenWrt 固件 for 兆能 M2 (ZN-M2)
-          - **编译时间:** `${{ env.BUILD_TIME }}`
-          - **固件平台:** `${{ env.FIRMWARE_TAG }}`
-          - **OpenWrt 内核:** `${{ env.VERSION_KERNEL }}`
-          ---
-          ### 核心特性
-          - **硬件平台:** Qualcomm IPQ60xx
-          - **核心功能:** HomeProxy 代理 + SmartDNS
-          - **硬件加速:** 完全启用 NSS 网络硬件加速
-          - **精简方向:** 彻底移除 Wi-Fi 与 USB 相关所有功能，纯有线旁路由
-          - **默认设置:** IP 地址、密码等由 `INIT_SETTINGS_SCRIPT` 脚本定义
-          ---
-          ### 源码信息
-          ```
-          - 源码地址: ${{ env.REPO_URL }}
-          - 源码分支: ${{ env.REPO_BRANCH }}
-          ```
-          ### 本次构建基于的最后一次 Commit
-          ```
-          ${{ env.VERSION_INFO }}
-          ```
+      # 步骤 9: 整理文件并发布
+      - name: Organize Files & Upload to Release
+        if: steps.compile.outputs.status == 'success' && env.FIRMWARE_RELEASE == 'true'
+        run: |
+          echo "Organizing files for release..."
+          cd ${{ env.OPENWRT_PATH }}/bin/targets/*/*
+          rm -f sha256sums
+          cp ${{ env.OPENWRT_PATH }}/.config build.config
+          # 如果需要打包所有 .ipk 软件, 取消下面两行注释
+          # mv -f ${{ env.OPENWRT_PATH }}/bin/packages/*/*/*.ipk packages
+          # tar -zcf Packages.tar.gz packages
+          echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
+      - name: Upload Firmware To Release
+        if: steps.compile.outputs.status == 'success' && env.FIRMWARE_RELEASE == 'true'
+        uses: ncipollo/release-action@v1
+        with:
+          name: R${{ env.DATE }} for ${{ env.FIRMWARE_TAG }}
+          allowUpdates: true
+          tag: ${{ env.FIRMWARE_TAG }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          artifacts: ${{ env.FIRMWARE_PATH }}/*
+          body: |
+            **This is OpenWrt Firmware for ${{ env.FIRMWARE_TAG }}**
+            ### 📒 固件信息(无WIFI)
+            - 无WIFI带有线NSS的6.12内核固件
+            - 💻 这是 ${{ env.FIRMWARE_TAG }} 平台使用的 OpenWrt 固件
+            - ⚽ 固件源码: ${{ env.REPO_URL }}
+            - 💝 源码分支: ${{ env.REPO_BRANCH }}
+            - 🌐 默认地址: 192.168.1.1
+            - 🔑 默认密码: password
+            ### 🧊 固件版本
+            - 固件内核版本：${{ env.VERSION_KERNEL }}
+            - 固件编译前最后一次➦[主源码](${{ env.REPO_URL }})更新记录
+            - ${{ env.VERSION_INFO }}
