@@ -1,8 +1,7 @@
 # ====================================================================================
-#  最终完美版 OpenWrt 编译流程 (v9 - 重新加入文件调试步骤)
-#  此版本强制包含文件列表调试步骤，用于彻底排查“文件找不到”的错误。
+#  最终完美版 OpenWrt 编译流程 (v13 - 使用 oldconfig 解决内核配置问题)
 # ====================================================================================
-name: Build OpenWrt for IPQ60XX-NOWIFI (with Debug Step)
+name: Build OpenWrt for IPQ60XX-NOWIFI
 
 on:
   workflow_dispatch:
@@ -28,7 +27,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: 1. 环境与空间准备 (Initialization & Maximize Space)
+    - name: 1. Initialize Environment
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
@@ -41,16 +40,16 @@ jobs:
         sudo -E apt-get -y clean
         sudo timedatectl set-timezone "$TZ"
 
-    - name: 2. 扩展磁盘空间 (Combine Disks)
+    - name: 2. Expand Disk Space
       uses: easimon/maximize-build-space@master
       with:
         swap-size-mb: 1024
         root-reserve-mb: 1024
 
-    - name: 3. 检出工作流仓库 (Checkout Workflow Repo)
+    - name: 3. Checkout Workflow Repo
       uses: actions/checkout@main
 
-    - name: 4. 克隆OpenWrt源码 (Clone Source Code)
+    - name: 4. Clone OpenWrt Source
       run: |
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
         echo "OPENWRT_PATH=$PWD/openwrt" >> $GITHUB_ENV
@@ -60,18 +59,7 @@ jobs:
         VERSION_KERNEL=$(grep -oP 'LINUX_KERNEL_HASH-\K[0-9]+\.[0-9]+' target/linux/qualcommax/Makefile | head -n 1)
         echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
 
-    # =================================================================
-    # ★ 调试步骤：检查文件是否存在 ★
-    # =================================================================
-    - name: Debug
-      run: |
-        echo "================================================================"
-        echo "当前工作目录是: $(pwd)"
-        echo "列出所有文件和文件夹 (递归):"
-        ls -R
-        echo "================================================================"
-
-    - name: 5. 加载自定义内容并生成最终.config (Load Custom Feeds, Scripts & Config)
+    - name: 5. Load Custom Content and Prepare Config
       run: |
         # 使用你的 feeds 文件直接覆盖默认的 feeds 配置文件
         if [ -f "$CUSTOM_FEEDS_CONF" ]; then
@@ -107,7 +95,7 @@ jobs:
         # 生成最终的完整 .config
         make defconfig
 
-    - name: 6. 生成环境变量 (Generate Variables)
+    - name: 6. Generate Environment Variables
       run: |
         cd ${{ env.OPENWRT_PATH }}
         SOURCE_REPO="$(echo $REPO_URL | awk -F '/' '{print $(NF)}')"
@@ -119,7 +107,7 @@ jobs:
         CONFIG_HASH=$(sha256sum .config | awk '{print $1}')
         echo "CONFIG_HASH=$CONFIG_HASH" >> $GITHUB_ENV
 
-    - name: 7. 缓存工具链 (Cache Toolchain)
+    - name: 7. Cache Toolchain
       if: env.CACHE_TOOLCHAIN == 'true'
       uses: HiGarfield/cachewrtbuild@main
       with:
@@ -127,24 +115,25 @@ jobs:
         mixkey: ${{ env.SOURCE_REPO }}-${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}-${{ env.CONFIG_HASH }}
         prefix: ${{ env.OPENWRT_PATH }}
 
-    - name: 8. 下载DL软件包 (Download DL Package)
+    - name: 8. Download DL Packages
       run: |
         cd ${{ env.OPENWRT_PATH }}
         make download -j8
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: 9. 开始编译固件 (Compile Firmware)
+    - name: 9. Compile Firmware
       id: compile
       run: |
         cd ${{ env.OPENWRT_PATH }}
-        make defconfig
-        echo "开始 $(nproc) 线程编译..."
+        # 使用 make oldconfig 非交互地更新内核配置，解决配置不同步的问题
+        make oldconfig
+        echo "Compiling with $(nproc) threads..."
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         echo "DATE=$(date +"%Y-%m-%d %H:%M")" >> $GITHUB_ENV
         echo "FILE_DATE=$(date +"%Y.%m.%d")" >> $GITHUB_ENV
 
-    - name: 10. 整理文件用于发布 (Organize Files for Release)
+    - name: 10. Organize Files for Release
       if: steps.compile.outputs.status == 'success'
       run: |
         FIRMWARE_DIR="${{ env.OPENWRT_PATH }}/bin/targets/${{ env.DEVICE_TARGET }}/${{ env.DEVICE_SUBTARGET }}"
@@ -153,7 +142,7 @@ jobs:
         cp ${{ env.OPENWRT_PATH }}/.config build.config
         rm -rf packages feeds.buildinfo version.buildinfo sha256sums
 
-    - name: 11. 发布固件到Release (Upload Firmware To Release)
+    - name: 11. Upload Firmware to Release
       if: steps.compile.outputs.status == 'success' && env.FIRMWARE_RELEASE == 'true'
       uses: ncipollo/release-action@v1
       with:
@@ -164,13 +153,13 @@ jobs:
         artifacts: ${{ env.FIRMWARE_PATH }}/*
         body: |
           **This is OpenWrt Firmware for ${{ env.FIRMWARE_TAG }}**
-          ### 📒 固件信息
-          - 平台: `${{ env.FIRMWARE_TAG }}`
-          - 内核: ${{ env.VERSION_KERNEL }}
-          - 特性: 无WIFI, 有线NSS硬件加速
-          - 默认地址与密码等由 `init-settings.sh` 脚本定义
-          ### 🧊 源码信息
-          - 固件源码: ${{ env.REPO_URL }}
-          - 源码分支: ${{ env.REPO_BRANCH }}
-          - 本次编译最后更新记录:
+          ### Firmware Details
+          - Platform: `${{ env.FIRMWARE_TAG }}`
+          - Kernel: ${{ env.VERSION_KERNEL }}
+          - Features: No-WIFI, NSS hardware acceleration for wired connections.
+          - Default IP and password are set by the `init-settings.sh` script.
+          ### Source Code Info
+          - Firmware Source: ${{ env.REPO_URL }}
+          - Source Branch: ${{ env.REPO_BRANCH }}
+          - Last commit details for this build:
           - ${{ env.VERSION_INFO }}
