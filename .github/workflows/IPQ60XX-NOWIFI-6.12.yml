@@ -98,8 +98,14 @@ jobs:
         run: |
           cd openwrt
           make defconfig
+     
+      # 步骤 6: 尝试以非交互方式用默认值更新.config 文件
+      - name: Update .config non-interactively
+        run: |
+          cd openwrt
+          yes "" | make oldconfig
 
-      # 步骤 6: 缓存工具链
+      # 步骤 7: 缓存工具链
       - name: Cache Toolchain
         if: env.CACHE_TOOLCHAIN == 'true'
         uses: HiGarfield/cachewrtbuild@main
@@ -108,14 +114,14 @@ jobs:
           mixkey: ${{ env.FIRMWARE_TAG }}-${{ env.REPO_BRANCH }}-${{ hashFiles(env.CONFIG_FILE) }}-${{ hashFiles(env.FEEDS_CONF_FILE) }}
           prefix: ${{ env.OPENWRT_PATH }}
 
-      # 步骤 7: 下载源码包
+      # 步骤 8: 下载源码包
       - name: Download DL Package
         run: |
           cd ${{ env.OPENWRT_PATH }}
           make download -j$(nproc)
           find dl -size -1024c -exec rm -f {} \;
 
-      # 步骤 8: 编译固件
+      # 步骤 9: 编译固件
       - name: Compile Firmware
         id: compile
         run: |
@@ -126,7 +132,7 @@ jobs:
           echo "DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
           echo "FILE_DATE=$(date +"%Y.%m.%d")" >> $GITHUB_ENV
 
-      # 步骤 9: 整理文件并发布
+      # 步骤 10: 整理文件并发布
       - name: Organize Files & Upload to Release
         if: steps.compile.outputs.status == 'success' && env.FIRMWARE_RELEASE == 'true'
         uses: ncipollo/release-action@v1
