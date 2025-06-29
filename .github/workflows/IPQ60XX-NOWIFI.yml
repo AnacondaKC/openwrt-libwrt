@@ -9,7 +9,7 @@ on:
 env:
   # 源码信息
   REPO_URL: https://github.com/LiBwrt/openwrt-6.x.git
-  REPO_BRANCH: k6.12-nss
+  REPO_BRANCH: main
 
   # 配置文件与自定义文件路径
   CONFIG_FILE: configs/IPQ60XX-NOWIFI.config
@@ -125,9 +125,7 @@ jobs:
       id: compile
       run: |
         cd ${{ env.OPENWRT_PATH }}
-        # 使用 make oldconfig 非交互地更新内核配置，解决配置不同步的问题
-        make oldconfig
-        echo "Compiling with $(nproc) threads..."
+        echo "开始 $(nproc) 线程编译..."
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         echo "DATE=$(date +"%Y-%m-%d %H:%M")" >> $GITHUB_ENV
