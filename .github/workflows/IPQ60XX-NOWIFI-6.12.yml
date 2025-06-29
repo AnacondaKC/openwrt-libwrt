@@ -12,9 +12,9 @@ env:
   REPO_BRANCH: k6.12-nss
 
   # 配置文件与自定义文件路径
-  CONFIG_FILE: configs/IPQ60XX-NOWIFI.config
-  CUSTOM_FEEDS_CONF: feeds/IPQ60XX-NOWIFI-feeds.txt
-  INIT_SETTINGS_SCRIPT: scripts/IPQ60XX-NOWIFI-settings.sh
+  CONFIG_FILE: configs/IPQ60XX-NOWIFI-6.12.config
+  CUSTOM_FEEDS_CONF: feeds/IPQ60XX-NOWIFI-6.12-feeds.txt
+  INIT_SETTINGS_SCRIPT: scripts/IPQ60XX-NOWIFI-6.12-settings.sh
 
   # 编译和发布选项
   CACHE_TOOLCHAIN: true
